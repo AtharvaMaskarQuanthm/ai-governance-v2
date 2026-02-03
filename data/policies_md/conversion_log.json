@@ -1,0 +1,123 @@
+{
+  "total": 19,
+  "converted": [
+    {
+      "pdf": "Choice ISMS_Hardening Policy..pdf",
+      "markdown": "HP_hardening_policy.md",
+      "pages": 26,
+      "time_seconds": 60.6
+    },
+    {
+      "pdf": "Choice-ISMS Information Classification Policy.pdf",
+      "markdown": "ICP_information_classification_policy.md",
+      "pages": 11,
+      "time_seconds": 49.8
+    },
+    {
+      "pdf": "Choice-ISMS-Asset Classification Policy.pdf",
+      "markdown": "ACP_asset_classification_policy.md",
+      "pages": 10,
+      "time_seconds": 44.6
+    },
+    {
+      "pdf": "Choice-ISMS-Business Continuity Policy.pdf",
+      "markdown": "BCP_business_continuity_policy.md",
+      "pages": 18,
+      "time_seconds": 80.8
+    },
+    {
+      "pdf": "Choice-ISMS-Crisis Management Plan.pdf",
+      "markdown": "CMP_crisis_management_plan.md",
+      "pages": 10,
+      "time_seconds": 40.7
+    },
+    {
+      "pdf": "Choice-ISMS-Cyber Security Incident & Problem Management Procedure .pdf",
+      "markdown": "CSIPMP_cyber_security_incident_problem_management_procedure.md",
+      "pages": 18,
+      "time_seconds": 73.3
+    },
+    {
+      "pdf": "Choice-ISMS-CyberSecurity Policy.pdf",
+      "markdown": "CSP_cyber_security_policy.md",
+      "pages": 23,
+      "time_seconds": 73.7
+    },
+    {
+      "pdf": "Choice-ISMS-Data disposal & retention POLICY.pdf",
+      "markdown": "DDR_data_disposal_and_retention_policy.md",
+      "pages": 5,
+      "time_seconds": 25.9
+    },
+    {
+      "pdf": "Choice-ISMS-Incident-Management.pdf",
+      "markdown": "IMP_incident_management_policy.md",
+      "pages": 12,
+      "time_seconds": 61.3
+    },
+    {
+      "pdf": "Choice-ISMS-Information Security Policy.pdf",
+      "markdown": "ISP_information_security_policy.md",
+      "pages": 16,
+      "time_seconds": 58.2
+    },
+    {
+      "pdf": "Choice-ISMS-mobiledevice-POLICY.pdf",
+      "markdown": "MDP_mobile_device_policy.md",
+      "pages": 5,
+      "time_seconds": 30.9
+    },
+    {
+      "pdf": "Choice-ISMS-NetworkSecurity-POLICY.pdf",
+      "markdown": "NSMP_network_security_management_policy.md",
+      "pages": 8,
+      "time_seconds": 31.8
+    },
+    {
+      "pdf": "Choice-ISMS-SDLC-POLICY.pdf",
+      "markdown": "SDP_software_development_policy.md",
+      "pages": 10,
+      "time_seconds": 48.8
+    },
+    {
+      "pdf": "Choice_ISMS_Consolidated_Policies.pdf",
+      "markdown": "ISMS_consolidated_isms_policies.md",
+      "pages": 87,
+      "time_seconds": 199.7
+    },
+    {
+      "pdf": "Choice_ISMS_Consolidated_PROCEDURES.pdf",
+      "markdown": "ISMS_choice_equity_broking_pvt_ltd_consolidated_procedures.md",
+      "pages": 47,
+      "time_seconds": 44.1
+    },
+    {
+      "pdf": "Choice_ISMS_Supplier-POLICY.pdf",
+      "markdown": "SRP_supplier_relationship_policy.md",
+      "pages": 11,
+      "time_seconds": 22.8
+    },
+    {
+      "pdf": "Data Classification Policy.pdf",
+      "markdown": "DCP_data_classification_policy.md",
+      "pages": 8,
+      "time_seconds": 17.6
+    },
+    {
+      "pdf": "ISMS SCOPE.pdf",
+      "markdown": "ISMS_isms_scope.md",
+      "pages": 5,
+      "time_seconds": 16.2
+    }
+  ],
+  "skipped": [
+    {
+      "pdf": "Choice_IS_Risk_Management_Procedure.pdf",
+      "existing_md": "IRM_is_risk_management_methodology.md"
+    }
+  ],
+  "failed": [],
+  "start_time": "2026-02-03T14:27:34.427971",
+  "model": "gpt-4o",
+  "end_time": "2026-02-03T14:46:20.659753"
+}

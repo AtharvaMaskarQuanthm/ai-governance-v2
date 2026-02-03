@@ -1,0 +1,19 @@
+{
+  "total_nodes": 707,
+  "total_edges": 1060,
+  "nodes_by_type": {
+    "document": 17,
+    "section": 575,
+    "control": 22,
+    "external": 18,
+    "role": 41,
+    "process": 7,
+    "doc": 18,
+    "asset": 9
+  },
+  "edges_by_type": {
+    "CONTAINS": 588,
+    "HAS_ENTITY": 281,
+    "CO_OCCURS": 191
+  }
+}

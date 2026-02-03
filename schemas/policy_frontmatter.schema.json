@@ -1,0 +1,194 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "policy-frontmatter-schema",
+  "title": "Policy Document Frontmatter Schema",
+  "description": "JSON Schema for validating YAML frontmatter in converted policy markdown files",
+  "type": "object",
+  "required": [
+    "document_id",
+    "title",
+    "filename",
+    "version",
+    "status",
+    "owner",
+    "classification",
+    "applies_to",
+    "regulatory_frameworks"
+  ],
+  "properties": {
+    "document_id": {
+      "type": "string",
+      "pattern": "^[A-Z]{2,10}$",
+      "description": "Unique short identifier (e.g., CSP, ISP, IMP)"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 5,
+      "description": "Full document title"
+    },
+    "filename": {
+      "type": "string",
+      "pattern": "\\.pdf$",
+      "description": "Original PDF filename"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+(\\.\\d+)?$",
+      "description": "Semantic version (e.g., 2.3 or 2.3.1)"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["draft", "review", "approved", "superseded"],
+      "description": "Document lifecycle status"
+    },
+    "created_date": {
+      "type": "string",
+      "format": "date",
+      "description": "Initial creation date (YYYY-MM-DD)"
+    },
+    "effective_date": {
+      "type": "string",
+      "format": "date",
+      "description": "Date policy became effective"
+    },
+    "last_reviewed": {
+      "type": "string",
+      "format": "date",
+      "description": "Last review date"
+    },
+    "next_review": {
+      "type": ["string", "null"],
+      "format": "date",
+      "description": "Next scheduled review date"
+    },
+    "owner": {
+      "type": "object",
+      "required": ["name", "role"],
+      "properties": {
+        "name": { "type": "string" },
+        "role": { "type": "string" },
+        "email": { "type": ["string", "null"], "format": "email" }
+      }
+    },
+    "prepared_by": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "role"],
+        "properties": {
+          "name": { "type": "string" },
+          "role": { "type": "string" }
+        }
+      }
+    },
+    "approved_by": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "role"],
+        "properties": {
+          "name": { "type": "string" },
+          "role": { "type": "string" },
+          "date": { "type": "string", "format": "date" }
+        }
+      }
+    },
+    "classification": {
+      "type": "string",
+      "enum": ["Public", "Internal", "Confidential", "Restricted"],
+      "description": "Information classification level"
+    },
+    "applies_to": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1,
+      "description": "Groups/roles this policy applies to"
+    },
+    "regulatory_frameworks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Short identifier (e.g., ISO27001, SEBI-CSCRF)"
+          },
+          "name": {
+            "type": "string",
+            "description": "Full framework name"
+          },
+          "clauses": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Specific clauses/sections addressed"
+          },
+          "reference": {
+            "type": "string",
+            "description": "Official circular/document reference"
+          }
+        }
+      }
+    },
+    "references": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["document_id", "title", "relationship"],
+        "properties": {
+          "document_id": { "type": "string" },
+          "title": { "type": "string" },
+          "relationship": {
+            "type": "string",
+            "enum": ["parent", "child", "related", "supersedes", "superseded_by"]
+          }
+        }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "properties": {
+        "description": { "type": "string" },
+        "inclusions": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "exclusions": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "entities": {
+      "type": "object",
+      "description": "Extracted entities for GraphRAG",
+      "properties": {
+        "roles": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "controls": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "assets": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "processes": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "external_parties": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Keywords for search enhancement"
+    }
+  }
+}

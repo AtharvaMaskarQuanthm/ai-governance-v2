@@ -1,0 +1,18 @@
+# PDF Processing
+pdfplumber>=0.10.0
+
+# OpenAI API
+openai>=1.0.0
+
+# Core utilities
+python-dotenv>=1.0.0
+pyyaml>=6.0
+
+# Search & Retrieval
+chromadb>=0.4.0
+rank-bm25>=0.2.2
+networkx>=3.0  # Knowledge graph for GraphRAG
+
+# Optional: For better embeddings
+# sentence-transformers>=2.2.0
+
