@@ -26,6 +26,22 @@ class PolicyMapping:
     relevance: str  # How this section addresses the requirement
     excerpt: str  # Relevant excerpt from the section
     coverage_strength: str  # STRONG / MODERATE / WEAK
+    # Structured reference & evidence strength fields
+    evidence_strength: str = "SUPPORTING"  # DIRECT / SUPPORTING / TANGENTIAL (from LLM)
+    document_id: str = ""                  # e.g., "CSP"
+    section_path: str = ""                 # e.g., "6.0 > 6.3 > 6.3.2"
+    retrieval_methods: list[str] = None    # ["bm25", "vector", "hyde"]
+    retriever_scores: dict = None          # {"bm25": 0.8, "vector": 0.6}
+    entities: dict = None                  # {roles: [...], controls: [...]}
+    compliance_relevance: Optional[str] = None  # HIGH/MEDIUM/LOW
+
+    def __post_init__(self):
+        if self.retrieval_methods is None:
+            self.retrieval_methods = []
+        if self.retriever_scores is None:
+            self.retriever_scores = {}
+        if self.entities is None:
+            self.entities = {}
 
 
 @dataclass
@@ -59,7 +75,8 @@ Your job is to analyze coverage and output a JSON response.
       "document_title": "Cyber Security Policy",
       "relevance": "How this section addresses the requirement",
       "excerpt": "Direct quote from the policy (max 200 chars)",
-      "coverage_strength": "STRONG" | "MODERATE" | "WEAK"
+      "coverage_strength": "STRONG" | "MODERATE" | "WEAK",
+      "evidence_strength": "DIRECT" | "SUPPORTING" | "TANGENTIAL"
     }
   ],
   "gaps": [
@@ -79,7 +96,12 @@ Your job is to analyze coverage and output a JSON response.
 - NOT_COVERED: No relevant policy content found
 - Be specific about what IS covered and what IS NOT
 - Quote directly from policies when possible
-- Recommendations should be actionable"""
+- Recommendations should be actionable
+
+## Evidence Strength Classification:
+- DIRECT: Policy explicitly addresses this specific requirement with clear controls
+- SUPPORTING: Policy covers related controls that support compliance but doesn't directly address the requirement
+- TANGENTIAL: Policy mentions related concepts but doesn't substantively support this requirement"""
 
 
 class ComplianceMapper:
@@ -101,14 +123,29 @@ class ComplianceMapper:
         """Format retrieved sections for the analysis prompt."""
         sections = []
         for i, r in enumerate(results, 1):
+            # Build retriever scores line
+            score_parts = [f"{name}: {score:.4f}" for name, score in r.retriever_scores.items()]
+            retriever_scores_line = ", ".join(score_parts) if score_parts else "N/A"
+
+            # Build key entities summary (top 3 per category)
+            entity_parts = []
+            for category, items in r.entities.items():
+                if items:
+                    top_items = items[:3] if isinstance(items, list) else [items]
+                    entity_parts.append(f"{category}: {', '.join(str(e) for e in top_items)}")
+            entities_line = "; ".join(entity_parts) if entity_parts else "None"
+
             sections.append(f"""
 --- Section {i} ---
 ID: {r.section_id}
+Document ID: {r.document_id}
 Title: {r.section_title}
 Document: {r.document_title}
 Path: {r.section_path}
-Retrieval Score: {r.score:.4f}
+Retrieval Score: {r.score:.4f} (per-retriever: {retriever_scores_line})
 Sources: {', '.join(r.sources)}
+Compliance Relevance: {r.compliance_relevance or 'N/A'}
+Key Entities: {entities_line}
 
 Content:
 {r.content}
@@ -183,16 +220,29 @@ Output ONLY valid JSON matching the specified format."""
         # Analyze coverage with LLM
         analysis = self._analyze_coverage(requirement, results)
 
+        # Build lookup from retrieval results for enriching mappings
+        result_lookup = {r.section_id: r for r in results}
+
         # Build mappings
         mappings = []
         for m in analysis.get("mappings", []):
+            section_id = m.get("section_id", "")
+            matched_result = result_lookup.get(section_id)
+
             mappings.append(PolicyMapping(
-                section_id=m.get("section_id", ""),
+                section_id=section_id,
                 section_title=m.get("section_title", ""),
                 document_title=m.get("document_title", ""),
                 relevance=m.get("relevance", ""),
                 excerpt=m.get("excerpt", ""),
-                coverage_strength=m.get("coverage_strength", "MODERATE")
+                coverage_strength=m.get("coverage_strength", "MODERATE"),
+                evidence_strength=m.get("evidence_strength", "SUPPORTING"),
+                document_id=matched_result.document_id if matched_result else "",
+                section_path=matched_result.section_path if matched_result else "",
+                retrieval_methods=matched_result.sources if matched_result else [],
+                retriever_scores=matched_result.retriever_scores if matched_result else {},
+                entities=matched_result.entities if matched_result else {},
+                compliance_relevance=matched_result.compliance_relevance if matched_result else None,
             ))
 
         return ComplianceResult(
@@ -243,9 +293,16 @@ def format_compliance_result(result: ComplianceResult, verbose: bool = False) ->
         lines.append(f"\nPOLICY MAPPINGS ({len(result.mappings)} sections):")
         for m in result.mappings:
             strength_indicator = {"STRONG": "[***]", "MODERATE": "[** ]", "WEAK": "[*  ]"}.get(m.coverage_strength, "[   ]")
+            evidence_indicator = {"DIRECT": "[===]", "SUPPORTING": "[== ]", "TANGENTIAL": "[=  ]"}.get(m.evidence_strength, "[   ]")
             lines.append(f"\n  [{m.section_id}] {m.section_title}")
-            lines.append(f"  Document: {m.document_title}")
+            doc_label = f"{m.document_title} ({m.document_id})" if m.document_id else m.document_title
+            lines.append(f"  Document: {doc_label}")
+            if m.section_path:
+                lines.append(f"  Section Path: {m.section_path}")
             lines.append(f"  Strength: {strength_indicator} {m.coverage_strength}")
+            lines.append(f"  Evidence: {evidence_indicator} {m.evidence_strength}")
+            if m.retrieval_methods:
+                lines.append(f"  Found via: {', '.join(m.retrieval_methods)}")
             lines.append(f"  Relevance: {m.relevance}")
             if m.excerpt:
                 lines.append(f"  Excerpt: \"{m.excerpt[:150]}...\"")
@@ -263,11 +320,19 @@ def format_compliance_result(result: ComplianceResult, verbose: bool = False) ->
         for r in result.recommendations:
             lines.append(f"  - {r}")
 
-    # Verbose: show raw retrieval results
+    # Verbose: show detailed retrieval results
     if verbose and result.raw_results:
         lines.append(f"\nRAW RETRIEVAL RESULTS:")
         for r in result.raw_results[:5]:
             lines.append(f"  [{r.section_id}] {r.section_title} (score: {r.score:.4f}, via: {','.join(r.sources)})")
+            if r.retriever_scores:
+                score_parts = [f"{name}: {score:.4f}" for name, score in r.retriever_scores.items()]
+                lines.append(f"    Per-retriever: {', '.join(score_parts)}")
+            if r.compliance_relevance:
+                lines.append(f"    Compliance relevance: {r.compliance_relevance}")
+            entity_count = sum(len(v) if isinstance(v, list) else 1 for v in r.entities.values()) if r.entities else 0
+            if entity_count:
+                lines.append(f"    Entities: {entity_count} across {len(r.entities)} categories")
 
     lines.append("")
     return "\n".join(lines)

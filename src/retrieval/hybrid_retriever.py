@@ -36,6 +36,20 @@ class RetrievalResult:
     content: str
     score: float
     sources: list[str]  # Which retrievers found this: ["bm25", "vector", "hyde", "graph"]
+    # Metadata preserved from IndexedChunk
+    entities: dict = None                          # from IndexedChunk.entities
+    compliance_relevance: Optional[str] = None     # HIGH/MEDIUM/LOW
+    likely_maps_to: list[str] = None               # regulatory frameworks
+    level: int = 0                                 # heading level 1-6
+    retriever_scores: dict = None                  # {"bm25": 0.8, "vector": 0.6, ...}
+
+    def __post_init__(self):
+        if self.entities is None:
+            self.entities = {}
+        if self.likely_maps_to is None:
+            self.likely_maps_to = []
+        if self.retriever_scores is None:
+            self.retriever_scores = {}
 
 
 HYDE_SYSTEM_PROMPT = """You are an expert compliance officer at a financial services organization in India.
@@ -103,7 +117,7 @@ class HybridRetriever:
         self,
         result_lists: list[list[tuple[str, float, str]]],
         k: int = 60
-    ) -> list[tuple[str, float, list[str]]]:
+    ) -> list[tuple[str, float, list[str], dict]]:
         """
         Combine results using Reciprocal Rank Fusion.
 
@@ -112,24 +126,27 @@ class HybridRetriever:
             k: RRF parameter (higher = less impact from rank differences)
 
         Returns:
-            List of (chunk_id, fused_score, sources) sorted by score
+            List of (chunk_id, fused_score, sources, retriever_scores) sorted by score
         """
         fused_scores = {}
         chunk_sources = {}
+        chunk_retriever_scores = {}
 
         for result_list in result_lists:
             for rank, (chunk_id, score, source) in enumerate(result_list):
                 if chunk_id not in fused_scores:
                     fused_scores[chunk_id] = 0
                     chunk_sources[chunk_id] = []
+                    chunk_retriever_scores[chunk_id] = {}
 
                 fused_scores[chunk_id] += 1 / (k + rank + 1)
                 if source not in chunk_sources[chunk_id]:
                     chunk_sources[chunk_id].append(source)
+                chunk_retriever_scores[chunk_id][source] = round(score, 4)
 
         # Sort by fused score
         results = [
-            (chunk_id, score, chunk_sources[chunk_id])
+            (chunk_id, score, chunk_sources[chunk_id], chunk_retriever_scores[chunk_id])
             for chunk_id, score in fused_scores.items()
         ]
         results.sort(key=lambda x: x[1], reverse=True)
@@ -209,7 +226,7 @@ class HybridRetriever:
             # Get initial section IDs from top results
             initial_section_ids = [
                 self._chunk_id_to_section_id(chunk_id)
-                for chunk_id, _, _ in fused[:per_retriever_k]
+                for chunk_id, _, _, _ in fused[:per_retriever_k]
             ]
 
             # Expand via graph
@@ -246,7 +263,7 @@ class HybridRetriever:
 
         # Build final results
         results = []
-        for chunk_id, score, sources in fused[:top_k]:
+        for chunk_id, score, sources, ret_scores in fused[:top_k]:
             chunk = chunk_lookup.get(chunk_id)
             if chunk:
                 results.append(RetrievalResult(
@@ -258,7 +275,12 @@ class HybridRetriever:
                     section_path=chunk.section_path,
                     content=chunk.content,
                     score=score,
-                    sources=sources
+                    sources=sources,
+                    entities=chunk.entities if chunk.entities else {},
+                    compliance_relevance=chunk.compliance_relevance,
+                    likely_maps_to=chunk.likely_maps_to if chunk.likely_maps_to else [],
+                    level=chunk.level,
+                    retriever_scores=ret_scores,
                 ))
 
         return results
