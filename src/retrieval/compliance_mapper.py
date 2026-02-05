@@ -10,11 +10,15 @@ Provides:
 """
 
 import json
-from dataclasses import dataclass
+import logging
+from dataclasses import dataclass, field
 from typing import Optional
 from openai import OpenAI
 
 from .hybrid_retriever import HybridRetriever, RetrievalResult
+from .requirement_expander import RequirementExpander, ExpandedRequirement
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -97,11 +101,22 @@ Your job is to analyze coverage and output a JSON response.
 - Be specific about what IS covered and what IS NOT
 - Quote directly from policies when possible
 - Recommendations should be actionable
+- If sub-requirements are provided, analyze coverage for EACH sub-requirement individually
+- Report gaps at the sub-requirement level for more actionable findings
 
 ## Evidence Strength Classification:
 - DIRECT: Policy explicitly addresses this specific requirement with clear controls
 - SUPPORTING: Policy covers related controls that support compliance but doesn't directly address the requirement
 - TANGENTIAL: Policy mentions related concepts but doesn't substantively support this requirement"""
+
+
+@dataclass
+class _ScoredChunk:
+    """Tracks a chunk across multiple search passes."""
+    result: RetrievalResult
+    best_score: float
+    pass_hits: list[str] = field(default_factory=list)
+    sources_union: set = field(default_factory=set)
 
 
 class ComplianceMapper:
@@ -113,11 +128,99 @@ class ComplianceMapper:
         self,
         retriever: HybridRetriever,
         openai_client: Optional[OpenAI] = None,
-        analysis_model: str = "gpt-4o"
+        analysis_model: str = "gpt-4o",
+        expander: Optional[RequirementExpander] = None
     ):
         self.retriever = retriever
         self.client = openai_client or OpenAI()
         self.analysis_model = analysis_model
+        self.expander = expander
+
+    def _accumulate_results(
+        self,
+        accumulator: dict[str, _ScoredChunk],
+        results: list[RetrievalResult],
+        pass_label: str
+    ) -> None:
+        """Add results from one search pass into the accumulator."""
+        for r in results:
+            if r.chunk_id in accumulator:
+                entry = accumulator[r.chunk_id]
+                entry.best_score = max(entry.best_score, r.score)
+                entry.pass_hits.append(pass_label)
+                entry.sources_union.update(r.sources)
+            else:
+                accumulator[r.chunk_id] = _ScoredChunk(
+                    result=r,
+                    best_score=r.score,
+                    pass_hits=[pass_label],
+                    sources_union=set(r.sources),
+                )
+
+    def _merge_multi_pass_results(
+        self,
+        accumulator: dict[str, _ScoredChunk],
+        top_k: int
+    ) -> list[RetrievalResult]:
+        """Merge results from multiple passes with boost for multi-pass hits."""
+        boost_map = {1: 1.0, 2: 1.3, 3: 1.6}
+        merged = []
+        for entry in accumulator.values():
+            num_passes = min(len(entry.pass_hits), 3)
+            boost = boost_map.get(num_passes, 1.6)
+            boosted_score = entry.best_score * boost
+            # Update the result with merged info
+            r = entry.result
+            r.score = boosted_score
+            r.sources = list(entry.sources_union)
+            merged.append(r)
+        merged.sort(key=lambda r: r.score, reverse=True)
+        return merged[:top_k]
+
+    def _multi_pass_search(
+        self,
+        requirement: str,
+        expanded: ExpandedRequirement,
+        top_k: int,
+        use_hyde: bool
+    ) -> list[RetrievalResult]:
+        """Run multi-pass search using expanded requirement."""
+        accumulator: dict[str, _ScoredChunk] = {}
+
+        # Pass 1: Primary — full search on original requirement
+        primary_results = self.retriever.search(
+            requirement,
+            top_k=top_k,
+            use_hyde=use_hyde
+        )
+        self._accumulate_results(accumulator, primary_results, "primary")
+
+        # Pass 2: Sub-requirements — BM25 + vector only (no HyDE, no graph)
+        if expanded.sub_requirements:
+            sub_k = max(5, top_k // 2)
+            for sub_req in expanded.sub_requirements:
+                sub_results = self.retriever.search(
+                    sub_req,
+                    top_k=sub_k,
+                    use_hyde=False,
+                    use_graph=False
+                )
+                self._accumulate_results(accumulator, sub_results, "sub_req")
+
+        # Pass 3: Search terms — BM25 only
+        if expanded.search_terms:
+            terms_query = expanded.search_terms_query()
+            terms_results = self.retriever.search(
+                terms_query,
+                top_k=top_k,
+                use_bm25=True,
+                use_vector=False,
+                use_hyde=False,
+                use_graph=False
+            )
+            self._accumulate_results(accumulator, terms_results, "terms")
+
+        return self._merge_multi_pass_results(accumulator, top_k)
 
     def _format_retrieved_sections(self, results: list[RetrievalResult]) -> str:
         """Format retrieved sections for the analysis prompt."""
@@ -155,14 +258,24 @@ Content:
     def _analyze_coverage(
         self,
         requirement: str,
-        results: list[RetrievalResult]
+        results: list[RetrievalResult],
+        expanded: Optional[ExpandedRequirement] = None
     ) -> dict:
         """Use LLM to analyze coverage."""
         sections_text = self._format_retrieved_sections(results)
 
+        expansion_block = ""
+        if expanded:
+            expansion_block = f"""
+## Requirement Decomposition:
+{expanded.context_for_analysis()}
+
+For each sub-requirement, assess whether it is covered.
+"""
+
         user_prompt = f"""## Regulatory Requirement:
 {requirement}
-
+{expansion_block}
 ## Retrieved Policy Sections:
 {sections_text}
 
@@ -186,7 +299,8 @@ Output ONLY valid JSON matching the specified format."""
         self,
         requirement: str,
         top_k: int = 10,
-        use_hyde: bool = True
+        use_hyde: bool = True,
+        use_expand: bool = True
     ) -> ComplianceResult:
         """
         Map a regulatory requirement to internal policies.
@@ -195,16 +309,24 @@ Output ONLY valid JSON matching the specified format."""
             requirement: The regulatory requirement text
             top_k: Number of policy sections to retrieve
             use_hyde: Whether to use HyDE for better retrieval
+            use_expand: Whether to use requirement expansion for multi-pass search
 
         Returns:
             ComplianceResult with full analysis
         """
-        # Retrieve relevant sections
-        results = self.retriever.search(
-            requirement,
-            top_k=top_k,
-            use_hyde=use_hyde
-        )
+        expanded = None
+
+        # Try requirement expansion + multi-pass search
+        if use_expand and self.expander:
+            try:
+                expanded = self.expander.expand(requirement)
+                results = self._multi_pass_search(requirement, expanded, top_k, use_hyde)
+            except Exception as e:
+                logger.warning("Requirement expansion failed, falling back to single-pass: %s", e)
+                expanded = None
+                results = self.retriever.search(requirement, top_k=top_k, use_hyde=use_hyde)
+        else:
+            results = self.retriever.search(requirement, top_k=top_k, use_hyde=use_hyde)
 
         if not results:
             return ComplianceResult(
@@ -218,7 +340,7 @@ Output ONLY valid JSON matching the specified format."""
             )
 
         # Analyze coverage with LLM
-        analysis = self._analyze_coverage(requirement, results)
+        analysis = self._analyze_coverage(requirement, results, expanded=expanded)
 
         # Build lookup from retrieval results for enriching mappings
         result_lookup = {r.section_id: r for r in results}
@@ -259,13 +381,14 @@ Output ONLY valid JSON matching the specified format."""
         self,
         requirements: list[str],
         top_k: int = 10,
-        use_hyde: bool = True
+        use_hyde: bool = True,
+        use_expand: bool = True
     ) -> list[ComplianceResult]:
         """Map multiple requirements."""
         results = []
         for i, req in enumerate(requirements, 1):
             print(f"Processing requirement {i}/{len(requirements)}...")
-            result = self.map_requirement(req, top_k=top_k, use_hyde=use_hyde)
+            result = self.map_requirement(req, top_k=top_k, use_hyde=use_hyde, use_expand=use_expand)
             results.append(result)
         return results
 

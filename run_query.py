@@ -36,22 +36,29 @@ def check_setup():
         sys.exit(1)
 
 
-def load_mapper():
+def load_mapper(use_expand: bool = True):
     """Load the compliance mapper."""
     from retrieval.hybrid_retriever import load_retriever
     from retrieval.compliance_mapper import ComplianceMapper
+    from retrieval.requirement_expander import RequirementExpander
 
     index_dir = Path(__file__).parent / "data" / "indexes"
 
     print("Loading indexes...")
     retriever = load_retriever(index_dir)
-    mapper = ComplianceMapper(retriever)
+
+    expander = None
+    if use_expand:
+        expander = RequirementExpander()
+        print("Requirement expansion enabled.")
+
+    mapper = ComplianceMapper(retriever, expander=expander)
     print("[OK] Ready!\n")
 
     return mapper
 
 
-def interactive_mode(mapper):
+def interactive_mode(mapper, use_hyde: bool = True, use_expand: bool = True):
     """Interactive query mode."""
     from retrieval.compliance_mapper import format_compliance_result
 
@@ -93,22 +100,26 @@ def interactive_mode(mapper):
         print("\n[SEARCHING...]\n")
 
         try:
-            result = mapper.map_requirement(requirement, top_k=10, use_hyde=True)
+            result = mapper.map_requirement(
+                requirement, top_k=10, use_hyde=use_hyde, use_expand=use_expand
+            )
             print(format_compliance_result(result, verbose=True))
         except Exception as e:
             print(f"[ERROR] {e}")
 
 
-def single_query(mapper, requirement: str):
+def single_query(mapper, requirement: str, use_hyde: bool = True, use_expand: bool = True):
     """Process a single query."""
     from retrieval.compliance_mapper import format_compliance_result
 
     print(f"[SEARCHING] {requirement[:100]}...")
-    result = mapper.map_requirement(requirement, top_k=10, use_hyde=True)
+    result = mapper.map_requirement(
+        requirement, top_k=10, use_hyde=use_hyde, use_expand=use_expand
+    )
     print(format_compliance_result(result, verbose=True))
 
 
-def process_file(mapper, filepath: str):
+def process_file(mapper, filepath: str, use_hyde: bool = True, use_expand: bool = True):
     """Process requirements from a file (one per line or separated by blank lines)."""
     from retrieval.compliance_mapper import format_compliance_result
 
@@ -129,7 +140,9 @@ def process_file(mapper, filepath: str):
 
     for i, req in enumerate(requirements, 1):
         print(f"\n[{i}/{len(requirements)}]")
-        result = mapper.map_requirement(req, top_k=10, use_hyde=True)
+        result = mapper.map_requirement(
+            req, top_k=10, use_hyde=use_hyde, use_expand=use_expand
+        )
         print(format_compliance_result(result))
 
 
@@ -153,18 +166,26 @@ def main():
         action="store_true",
         help="Disable HyDE (faster but less accurate)"
     )
+    parser.add_argument(
+        "--no-expand",
+        action="store_true",
+        help="Disable requirement expansion (faster, single-pass retrieval)"
+    )
 
     args = parser.parse_args()
 
+    use_hyde = not args.no_hyde
+    use_expand = not args.no_expand
+
     check_setup()
-    mapper = load_mapper()
+    mapper = load_mapper(use_expand=use_expand)
 
     if args.file:
-        process_file(mapper, args.file)
+        process_file(mapper, args.file, use_hyde=use_hyde, use_expand=use_expand)
     elif args.requirement:
-        single_query(mapper, args.requirement)
+        single_query(mapper, args.requirement, use_hyde=use_hyde, use_expand=use_expand)
     else:
-        interactive_mode(mapper)
+        interactive_mode(mapper, use_hyde=use_hyde, use_expand=use_expand)
 
 
 if __name__ == "__main__":
